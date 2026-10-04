@@ -35,7 +35,7 @@ export interface GlossaryTerm {
 export interface ReviewEvent {
   id: string;
   cueId: string;
-  action: "提交审校" | "审校通过" | "退回修改" | "术语锁定";
+  action: "提交审校" | "审校通过" | "退回修改" | "术语锁定" | "离线合并";
   detail: string;
   actor: string;
   time: string;
@@ -58,18 +58,18 @@ export interface TimelineConflict {
 }
 
 const KEY = "pair-wise-yf-51/subtitles-v1";
-const seedTracks: Track[] = [
+export const seedTracks: Track[] = [
   { id: "zh", name: "中文原字幕", locale: "zh", status: "已通过" },
   { id: "en", name: "English 翻译", locale: "en", status: "审校中" },
   { id: "ja", name: "日本語訳", locale: "ja", status: "草稿" }
 ];
-const seedCues: Cue[] = [
+export const seedCues: Cue[] = [
   { id: "c1", trackId: "zh", start: 0, end: 2.8, source: "潮汐退去后，码头重新露出水面。", translated: "潮汐退去后，码头重新露出水面。", status: "已通过", translator: "系统", reviewerNote: "" },
   { id: "c2", trackId: "en", start: 0, end: 2.8, source: "潮汐退去后，码头重新露出水面。", translated: "As the tide recedes, the pier emerges again.", status: "待审", translator: "林岚", reviewerNote: "" },
   { id: "c3", trackId: "en", start: 3.2, end: 6.5, source: "修复组必须在下一场潮水到来前完成加固。", translated: "The repair team must reinforce it before the next tide.", status: "翻译中", translator: "林岚", reviewerNote: "" },
   { id: "c4", trackId: "ja", start: 0, end: 2.8, source: "潮汐退去后，码头重新露出水面。", translated: "潮が引くと、桟橋が再び姿を現す。", status: "待译", translator: "周野", reviewerNote: "" }
 ];
-const seedTerms: GlossaryTerm[] = [
+export const seedTerms: GlossaryTerm[] = [
   { id: "g1", source: "潮汐", target: "tide", status: "已锁定", owner: "术语管理员" },
   { id: "g2", source: "码头", target: "pier", status: "已锁定", owner: "术语管理员" },
   { id: "g3", source: "加固", target: "reinforce", status: "建议", owner: "林岚" }
@@ -91,8 +91,12 @@ function persist() {
 }
 [tracks, cues, terms, reviewEvents, snapshots].forEach((store) => store.subscribe(persist));
 
-function event(cue: Cue | undefined, action: ReviewEvent["action"], detail: string) {
+export function logEvent(action: ReviewEvent["action"], detail: string, cue?: Cue) {
   reviewEvents.update((items) => [{ id: crypto.randomUUID(), cueId: cue?.id ?? "", action, detail, actor: get(reviewer), time: new Date().toISOString() }, ...items]);
+}
+
+function event(cue: Cue | undefined, action: ReviewEvent["action"], detail: string) {
+  logEvent(action, detail, cue);
 }
 
 export function updateCue(id: string, patch: Partial<Cue>, log = false) {
@@ -144,6 +148,38 @@ export function lockTerm(id: string) {
   const term = get(terms).find((item) => item.id === id);
   const cue = get(cues).find((item) => item.id === get(selectedCueId));
   event(cue, "术语锁定", `${term?.source} → ${term?.target}`);
+  // 术语锁定后，用到该术语的已通过译文立即失效，退回待审重算
+  const affected = revalidateApprovedCues();
+  if (affected) logEvent("退回修改", `锁定术语「${term?.source} → ${term?.target}」后，${affected} 条已通过字幕失效，退回待审`);
+}
+
+export function updateTermTarget(id: string, target: string) {
+  const term = get(terms).find((item) => item.id === id);
+  terms.update((items) => items.map((item) => item.id === id ? { ...item, target } : item));
+  if (term?.status === "已锁定") {
+    event(undefined, "术语锁定", `锁定术语「${term.source}」译文变更为「${target}」`);
+    const affected = revalidateApprovedCues();
+    if (affected) logEvent("退回修改", `锁定术语「${term.source}」译文变更，${affected} 条已通过字幕失效，退回待审`);
+  }
+}
+
+// 失效重算：所有已通过字幕中，原文含锁定术语源词、译文却未采用锁定译文的，退回待审。
+// 锁定译文为英文，仅对英语轨道生效（源文字幕与其他语种轨道不套用）。
+export function revalidateApprovedCues(): number {
+  const locked = get(terms).filter((term) => term.status === "已锁定");
+  let affected = 0;
+  for (const cue of get(cues)) {
+    if (cue.status !== "已通过") continue;
+    const track = get(tracks).find((item) => item.id === cue.trackId);
+    if (track?.locale !== "en") continue;
+    const violation = locked.find((term) => cue.source.includes(term.source) && !cue.translated.includes(term.target));
+    if (violation) {
+      affected++;
+      updateCue(cue.id, { status: "待审", reviewerNote: `锁定术语「${violation.source} → ${violation.target}」变更，已通过译文失效，请重新核对` });
+      logEvent("退回修改", `锁定术语变更导致已通过译文失效：${cue.source.slice(0, 14)}… 退回待审`, cue);
+    }
+  }
+  return affected;
 }
 
 export function createSnapshot(name = `时间轴快照 ${get(snapshots).length + 1}`) {

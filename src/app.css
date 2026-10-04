@@ -68,3 +68,31 @@ header p, header small { color: #697880; margin: 0; }
 .events small { color: #849097; }
 @media(max-width: 1050px) { .shell { grid-template-columns: 1fr; } .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; } .keyboard { margin: 0; width: 100%; } .editor-grid, .bottom-grid { grid-template-columns: 1fr; } .metrics { grid-template-columns: repeat(2, 1fr); } }
 @media(max-width: 680px) { main { padding: 16px; } header { flex-direction: column; } .metrics, .cue-form, .time-fields { grid-template-columns: 1fr; } .cue { grid-template-columns: 70px 1fr; } .cue > *:nth-child(n+3) { grid-column: 2; } }
+
+.offline-badge { background: #fff1d8; color: #996515; border-radius: 99px; padding: 6px 12px; font-size: 12px; white-space: nowrap; }
+.term-target { display: inline-block; width: 130px; margin-left: 6px; padding: 4px 8px; font-size: 13px; }
+.offline-note { color: #718087; font-size: 13px; margin: 8px 0 0; }
+.offline-note.ok { color: #0f735f; }
+.batch { border: 1px solid #dde5e7; border-radius: 9px; padding: 10px; margin-top: 10px; background: #fbfdfd; }
+.batch-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.batch-head small, .batch > small { color: #859198; font-size: 12px; }
+.batch-stats { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 8px 0; font-size: 12px; color: #63737a; }
+.stat-conflict { color: #996515; font-weight: 700; }
+.stat-failed { color: #a43838; font-weight: 700; }
+.chip.离线中 { background: #e6f2ff; color: #2b6cb0; }
+.chip.待合并 { background: #fff1d8; color: #996515; }
+.chip.部分合并 { background: #fdf0e0; color: #b25e09; }
+.chip.已合并 { background: #def5ee; color: #0f735f; }
+.chip.合并失败 { background: #fde5e5; color: #a43838; }
+.merge-card { border: 1px solid #f0c98a; background: #fff9ef; border-radius: 9px; padding: 10px; margin-top: 9px; }
+.merge-card > b { font-size: 13px; color: #40535a; }
+.violation { margin: 7px 0; color: #a43838; font-size: 13px; font-weight: 600; }
+.field-conflict { margin-top: 9px; border-top: 1px dashed #e4d4b8; padding-top: 8px; }
+.field-label { font-size: 12px; font-weight: 700; color: #6f685a; }
+.versions { display: grid; gap: 6px; margin: 6px 0; }
+.version { border: 1px solid #e4eaeb; border-radius: 7px; padding: 7px 8px; background: #fff; }
+.version small { color: #859198; font-size: 11px; }
+.version p { margin: 3px 0 0; font-size: 13px; color: #17212b; white-space: pre-wrap; word-break: break-word; }
+.version.chosen { border-color: #168f7f; background: #f1fbf8; }
+mark.diff-del { background: #fde5e5; color: #a43838; text-decoration: line-through; border-radius: 3px; padding: 0 2px; }
+mark.diff-add { background: #def5ee; color: #0f735f; border-radius: 3px; padding: 0 2px; }

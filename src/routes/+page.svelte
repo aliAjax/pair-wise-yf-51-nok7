@@ -7,8 +7,11 @@
   import { z } from "zod";
   import * as m from "$lib/paraglide/messages.js";
   import { setLocale } from "$lib/paraglide/runtime.js";
-  import { activeCues, activeTrackId, conflicts, createSnapshot, cues, lockTerm, mergeNext, nudgeCue, resolveConflict, restoreSnapshot, reviewCue, reviewEvents, reviewer, selectedCueId, setCueStatus, snapshots, splitCue, terms, tracks, updateCue } from "$lib/stores/subtitles";
+  import { activeCues, activeTrackId, conflicts, createSnapshot, cues, lockTerm, mergeNext, nudgeCue, resolveConflict, restoreSnapshot, reviewCue, reviewEvents, reviewer, selectedCueId, setCueStatus, snapshots, splitCue, terms, tracks, updateCue, updateTermTarget } from "$lib/stores/subtitles";
   import type { Cue } from "$lib/stores/subtitles";
+  import { activeOfflineBatch, applyOfflineDemoEdits, applyStudioDemoChanges, batchStats, checkInOfflineBatch, createOfflineBatch, mergeOfflineBatch, offlineBatches, resolveOfflineConflict, retryOfflineBatch } from "$lib/stores/offline";
+  import type { MergeField, MergeSide, OfflineBatch } from "$lib/stores/offline";
+  import { diffChars } from "$lib/diff";
 
   const cueSchema = z.object({ source: z.string().min(2), translated: z.string().min(2), start: z.coerce.number().min(0), duration: z.coerce.number().min(0.5).max(30) });
   const defaults = { source: "", translated: "", start: 0, duration: 2.5 };
@@ -34,6 +37,11 @@
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${tenths}`;
   }
 
+  const FIELD_LABELS: Record<MergeField, string> = { translated: "译文", start: "开始时间", end: "结束时间", status: "状态", deleted: "字幕存删" };
+  const statsOf = (batch: OfflineBatch) => batchStats(batch);
+  const diffSegs = (studio: string, offline: string) => diffChars(studio, offline);
+  const unresolvedCount = (batch: OfflineBatch) => batch.results.filter((r) => r.status === "冲突待选" || r.status === "未通过术语校验").length;
+
   onMount(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.target as HTMLElement)?.tagName === "TEXTAREA" || (event.target as HTMLElement)?.tagName === "INPUT") return;
@@ -58,7 +66,7 @@
     <div class="keyboard"><b>键盘操作</b><span>J / K 选择字幕</span><span>S 拆分 · M 合并</span><span>⌘S 保存快照</span></div>
   </aside>
   <main>
-    <header><div><small>纪录片《潮汐线》 · 第 3 集</small><h1>{m.title()}</h1><p>多语种轨道、术语锁定与审校反馈在同一时间轴协作。</p></div><div class="header-actions"><select value={$activeTrackId} onchange={(event) => activeTrackId.set(event.currentTarget.value)}>{#each $tracks as track}<option value={track.id}>{track.name}</option>{/each}</select><button onclick={() => setLocale("en")}>EN</button><button onclick={() => setLocale("zh")}>中文</button></div></header>
+    <header><div><small>纪录片《潮汐线》 · 第 3 集</small><h1>{m.title()}</h1><p>多语种轨道、术语锁定与审校反馈在同一时间轴协作。</p></div><div class="header-actions">{#if $activeOfflineBatch}<span class="offline-badge">离线模式 · {$activeOfflineBatch.name}（断网改动随批次带回）</span>{/if}<select value={$activeTrackId} onchange={(event) => activeTrackId.set(event.currentTarget.value)}>{#each $tracks as track}<option value={track.id}>{track.name}</option>{/each}</select><button onclick={() => setLocale("en")}>EN</button><button onclick={() => setLocale("zh")}>中文</button></div></header>
 
     <section class="metrics"><article><span>当前轨道</span><b>{activeTrack?.name}</b></article><article><span>字幕条数</span><b>{$activeCues.length}</b></article><article><span>待审</span><b>{$activeCues.filter((cue) => cue.status === "待审").length}</b></article><article><span>已锁定术语</span><b>{$terms.filter((term) => term.status === "已锁定").length}</b></article></section>
 
@@ -93,9 +101,9 @@
         </section>
 
         <section class="panel">
-          <div class="panel-head"><h2>术语锁定</h2><small>锁定术语不会被普通翻译直接覆盖</small></div>
+          <div class="panel-head"><h2>术语锁定</h2><small>锁定术语不会被离线改动绕过；变更锁定译文会退回已通过字幕</small></div>
           {#each $terms as term}
-            <div class="term"><span><b>{term.source}</b> → {term.target}</span><button class="btn btn-sm" disabled={term.status === "已锁定"} onclick={() => lockTerm(term.id)}>{term.status}</button></div>
+            <div class="term"><span><b>{term.source}</b> →<input class="input term-target" value={term.target} oninput={(event) => updateTermTarget(term.id, event.currentTarget.value)} /></span><button class="btn btn-sm" disabled={term.status === "已锁定"} onclick={() => lockTerm(term.id)}>{term.status}</button></div>
           {/each}
         </section>
 
@@ -104,6 +112,74 @@
           {#each $conflicts as conflict}
             <article class="conflict"><b>{conflict.message}</b><p>协作版本：{formatTime(conflict.remoteStart)}–{formatTime(conflict.remoteEnd)}</p><div class="actions"><button class="btn btn-sm" disabled={conflict.status !== "待处理"} onclick={() => resolveConflict(conflict.id, "采用本地")}>保留本机</button><button class="btn btn-sm variant-filled-primary" disabled={conflict.status !== "待处理"} onclick={() => resolveConflict(conflict.id, "采用协作版本")}>采用协作版本</button><span class="chip">{conflict.status}</span></div></article>
           {/each}
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><div><h2>离线批次 · 外拍车</h2><small>断网改动按字幕条三方合并，术语锁定不可绕过</small></div></div>
+          <div class="actions">
+            <button class="btn btn-sm" onclick={() => createOfflineBatch()}>创建离线批次</button>
+            {#if $activeOfflineBatch}
+              <button class="btn btn-sm" onclick={() => applyOfflineDemoEdits()}>模拟外拍车离线改动</button>
+              <button class="btn btn-sm variant-filled-primary" onclick={() => checkInOfflineBatch($activeOfflineBatch.id)}>恢复网络并交回批次</button>
+            {/if}
+            <button class="btn btn-sm" onclick={() => applyStudioDemoChanges()}>模拟棚内审校改动</button>
+          </div>
+          {#if $activeOfflineBatch}<p class="offline-note">离线模式中：改动记录在批次「{$activeOfflineBatch.name}」，不会覆盖棚内版本。</p>{/if}
+          {#each $offlineBatches as batch}
+            <article class="batch">
+              <div class="batch-head"><b>{batch.name}</b><span class={`chip batch-${batch.status}`}>{batch.status}</span></div>
+              <small>{batch.device} · 创建于 {new Date(batch.createdAt).toLocaleString("zh-CN")}{#if batch.checkedInAt} · 交回于 {new Date(batch.checkedInAt).toLocaleString("zh-CN")}{/if}</small>
+              {#if batch.status !== "离线中"}
+                <div class="batch-stats">
+                  <span>离线改动 {statsOf(batch).offlineChanged} 条</span>
+                  <span>已处理 {statsOf(batch).merged}/{statsOf(batch).total}</span>
+                  {#if statsOf(batch).conflicts}<span class="stat-conflict">冲突待选 {statsOf(batch).conflicts}</span>{/if}
+                  {#if statsOf(batch).failed}<span class="stat-failed">术语未过 {statsOf(batch).failed}</span>{/if}
+                </div>
+              {/if}
+              {#if batch.status === "待合并" || batch.status === "部分合并" || batch.status === "合并失败"}
+                <div class="actions">
+                  <button class="btn btn-sm variant-filled-primary" onclick={() => mergeOfflineBatch(batch.id)}>{batch.status === "待合并" ? "合并离线批次" : "重新合并全部"}</button>
+                  {#if unresolvedCount(batch) > 0}<button class="btn btn-sm" onclick={() => retryOfflineBatch(batch.id)}>重试未合并部分</button>{/if}
+                </div>
+              {/if}
+              {#if batch.status === "已合并"}<p class="offline-note ok">批次已全部合并完成，离线改动已按字幕条写入。</p>{/if}
+              {#each batch.results.filter((result) => result.status === "冲突待选" || result.status === "未通过术语校验") as result}
+                <div class="merge-card">
+                  <b>{result.source}</b>
+                  {#if result.message}<p class="violation">⚠ {result.message}</p>{/if}
+                  {#each result.conflicts as conflict}
+                    {@const segs = diffSegs(conflict.studio, conflict.offline)}
+                    <div class="field-conflict">
+                      <span class="field-label">{FIELD_LABELS[conflict.field]}</span>
+                      {#if conflict.field === "deleted"}
+                        <div class="versions">
+                          <div class="version studio" class:chosen={result.choices[conflict.field] === "studio"}><small>棚内版本</small><p>{conflict.studio}</p></div>
+                          <div class="version offline" class:chosen={result.choices[conflict.field] === "offline"}><small>离线版本</small><p>{conflict.offline}</p></div>
+                        </div>
+                      {:else}
+                        <div class="versions">
+                          <div class="version studio" class:chosen={result.choices[conflict.field] === "studio"}>
+                            <small>棚内版本{result.choices[conflict.field] === "studio" ? " · 已采用" : ""}</small>
+                            <p>{#each segs as seg}{#if seg.type !== "add"}{#if seg.type === "del"}<mark class="diff-del">{seg.text}</mark>{:else}{seg.text}{/if}{/if}{/each}</p>
+                          </div>
+                          <div class="version offline" class:chosen={result.choices[conflict.field] === "offline"}>
+                            <small>离线版本{result.choices[conflict.field] === "offline" ? " · 已采用" : ""}</small>
+                            <p>{#each segs as seg}{#if seg.type !== "del"}{#if seg.type === "add"}<mark class="diff-add">{seg.text}</mark>{:else}{seg.text}{/if}{/if}{/each}</p>
+                          </div>
+                        </div>
+                      {/if}
+                      <div class="actions">
+                        <button class="btn btn-sm" disabled={!!result.choices[conflict.field]} onclick={() => resolveOfflineConflict(batch.id, result.cueId, conflict.field, "studio")}>采用棚内</button>
+                        <button class="btn btn-sm variant-filled-primary" disabled={!!result.choices[conflict.field]} onclick={() => resolveOfflineConflict(batch.id, result.cueId, conflict.field, "offline")}>采用离线</button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/each}
+            </article>
+          {/each}
+          {#if !$offlineBatches.length}<p class="offline-note">暂无离线批次。外拍车前创建批次，断网期间的改动会在恢复网络后按字幕条合并。</p>{/if}
         </section>
       </aside>
     </div>
