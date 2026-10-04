@@ -57,6 +57,24 @@ header p, header small { color: #697880; margin: 0; }
 .variant-filled-success { background: #168f7f; color: #fff; border-color: #168f7f; }
 .variant-filled-error { background: #c64d4d; color: #fff; border-color: #c64d4d; }
 .term { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e4eaeb; padding: 9px 0; }
+.term-edit { display: inline-flex; gap: 5px; align-items: center; }
+.input-sm { padding: 5px 8px; font-size: 12px; width: 110px; }
+.offline-chip { background: #e7edff; color: #3548a0; }
+.offline-text, .offline-time { display: block; font-style: normal; font-size: 12px; color: #3548a0; background: #eef2ff; border-radius: 5px; padding: 2px 6px; margin-top: 4px; }
+.offline-time { width: max-content; margin-top: 3px; }
+.offline-banner { margin: 0 0 12px; padding: 8px 10px; border-radius: 8px; background: #fdecec; color: #9c3333; font-size: 13px; }
+.batch { border: 1px solid #dce3e5; border-radius: 9px; padding: 10px; margin-bottom: 8px; background: #fbfdfd; }
+.batch.done { background: #f3faf7; border-color: #bfe3d6; }
+.batch p { margin: 5px 0; }
+.error-text { color: #a43838; font-size: 12px; }
+.conflict.merge { border-color: #b9c6f0; background: #f7f9ff; }
+.diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+.diff-grid label { display: grid; grid-template-columns: auto 1fr; gap: 6px; align-items: start; border: 1px solid #d7def2; border-radius: 8px; padding: 8px; cursor: pointer; background: #fff; }
+.diff-grid label.chosen { border-color: #146f68; background: #effaf6; }
+.diff-grid .side-tag { font-size: 11px; border-radius: 99px; padding: 2px 7px; white-space: nowrap; }
+.side-tag.offline { background: #e7edff; color: #3548a0; }
+.side-tag.remote { background: #fff1d8; color: #996515; }
+.diff-grid p { margin: 0; grid-column: 2; color: #45545c; }
 .conflict { border: 1px solid #f0c98a; background: #fff9ef; border-radius: 9px; padding: 10px; margin-bottom: 8px; }
 .conflict p { margin: 6px 0; color: #6f685a; }
 .bottom-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 18px; margin-top: 18px; }
